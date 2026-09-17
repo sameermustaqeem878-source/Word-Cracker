@@ -779,11 +779,15 @@ export default function VaultCracker() {
         }
       `}</style>
 
-      <div className="stage">
-        <div className="brand">
-          <h1>Vault Cracker</h1>
-          <p>Guess the hidden word — 5 tries to crack it, new word every round</p>
+<div className="stage">
+        <div className="brand" style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+            <KeyRound size={38} color="#E8B65C" />
+            <h1 style={{ margin: 0 }}>Vault Cracker</h1>
+          </div>
+          <p style={{ margin: '8px 0 0 0' }}>Guess the hidden word — 5 tries to crack it, new word every round</p>
         </div>
+        
 
         {screen === "name" && (
           <div className="vault-panel">
