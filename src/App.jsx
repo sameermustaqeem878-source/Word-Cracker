@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { KeyRound, Trophy, Clock, Feather, Zap, Flame, X, Sparkles, Lock, Delete, CornerDownLeft, Volume2, VolumeX, HelpCircle, ArrowRight, Skull } from "lucide-react";
+import { KeyRound, Trophy, Clock, Feather, Zap, Flame, X, Sparkles, Lock, Delete, CornerDownLeft, Volume2, VolumeX, HelpCircle, ArrowRight, Skull, BarChart3 } from "lucide-react";
 import * as Tone from "tone";
 
 // Outside Claude.ai, window.storage doesn't exist — fall back to plain
@@ -288,6 +288,14 @@ export default function VaultCracker() {
   const [hint, setHint] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const emptyDiffStats = () => ({ played: 0, won: 0, totalTimeMs: 0, guessDist: [0, 0, 0, 0, 0] });
+  const [diffStats, setDiffStats] = useState({
+    easy: emptyDiffStats(), medium: emptyDiffStats(), hard: emptyDiffStats(), impossible: emptyDiffStats()
+  });
+  const statsLoaded = useRef(false);
+
   const [rows, setRows] = useState([]); // {guess, statuses, revealedCount}
   const [currentGuess, setCurrentGuess] = useState("");
   const [currentRow, setCurrentRow] = useState(0);
@@ -304,6 +312,8 @@ export default function VaultCracker() {
   const [showResult, setShowResult] = useState(false);
   const [showRecords, setShowRecords] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [statsTab, setStatsTab] = useState("easy");
   const [recordsTab, setRecordsTab] = useState("easy");
   const [recordsList, setRecordsList] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -314,6 +324,7 @@ export default function VaultCracker() {
   // ---------- sound ----------
   const [soundOn, setSoundOn] = useState(true);
   const synthRef = useRef(null);
+  const musicSynthRef = useRef(null);
   const audioReadyRef = useRef(false);
 
   const ensureAudio = useCallback(async () => {
@@ -329,6 +340,14 @@ export default function VaultCracker() {
       }).toDestination();
       synth.volume.value = -20;
       synthRef.current = synth;
+
+      const musicSynth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.01, decay: 0.15, sustain: 0.15, release: 0.3 }
+      }).toDestination();
+      musicSynth.volume.value = -12;
+      musicSynthRef.current = musicSynth;
+
       audioReadyRef.current = true;
     } catch (e) { /* audio unavailable, game still works silently */ }
   }, []);
@@ -339,6 +358,34 @@ export default function VaultCracker() {
       if (!synthRef.current) return;
       const note = kind === "enter" ? "C5" : kind === "back" ? "A3" : "C6";
       synthRef.current.triggerAttackRelease(note, 0.03);
+    });
+  }, [soundOn, ensureAudio]);
+
+  const playWinSound = useCallback(() => {
+    if (!soundOn) return;
+    ensureAudio().then(() => {
+      const synth = musicSynthRef.current;
+      if (!synth) return;
+      const now = Tone.now();
+      // Bright ascending arpeggio — a little triumphant chime.
+      const notes = [
+        ["C5", 0], ["E5", 0.1], ["G5", 0.2], ["C6", 0.32]
+      ];
+      notes.forEach(([note, offset]) => synth.triggerAttackRelease(note, 0.35, now + offset));
+    });
+  }, [soundOn, ensureAudio]);
+
+  const playLoseSound = useCallback(() => {
+    if (!soundOn) return;
+    ensureAudio().then(() => {
+      const synth = musicSynthRef.current;
+      if (!synth) return;
+      const now = Tone.now();
+      // Descending minor-ish tones — a gentle "vault stays shut" thud, not harsh.
+      const notes = [
+        ["A3", 0], ["G3", 0.15], ["E3", 0.3], ["D3", 0.48]
+      ];
+      notes.forEach(([note, offset]) => synth.triggerAttackRelease(note, 0.4, now + offset));
     });
   }, [soundOn, ensureAudio]);
 
@@ -371,6 +418,48 @@ export default function VaultCracker() {
       } catch (e) {}
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await window.storage.get("vc-stats", false);
+        if (saved && saved.value) {
+          const parsed = JSON.parse(saved.value);
+          if (typeof parsed.streak === "number") setStreak(parsed.streak);
+          if (typeof parsed.bestStreak === "number") setBestStreak(parsed.bestStreak);
+
+          if (parsed.diffStats) {
+            setDiffStats((d) => ({ ...d, ...parsed.diffStats }));
+          } else if (parsed.totals) {
+            // Migrating from the older version that only tracked win counts.
+            setDiffStats((d) => {
+              const next = { ...d };
+              for (const key of Object.keys(next)) {
+                const won = parsed.totals[key] || 0;
+                if (won > 0) {
+                  next[key] = {
+                    played: won, won, totalTimeMs: 0,
+                    guessDist: [0, 0, 0, 0, won] // unknown distribution — bucket into "5 guesses" as a safe default
+                  };
+                }
+              }
+              return next;
+            });
+          }
+        }
+      } catch (e) {
+        // no saved stats yet — that's fine, stay at defaults
+      }
+      statsLoaded.current = true;
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!statsLoaded.current) return; // don't overwrite saved stats with defaults before they've loaded
+    window.storage
+      .set("vc-stats", JSON.stringify({ streak, bestStreak, diffStats }), false)
+      .catch(() => {});
+  }, [streak, bestStreak, diffStats]);
 
   // ---------- timer ----------
   const startTimer = useCallback(() => {
@@ -477,6 +566,26 @@ export default function VaultCracker() {
     setShowResult(true);
     if (didWin) {
       setFeedback({ msg: "Winner!", type: "success" });
+      playWinSound();
+      setStreak((s) => {
+        const next = s + 1;
+        setBestStreak((b) => Math.max(b, next));
+        return next;
+      });
+      setDiffStats((d) => {
+        const cur = d[difficulty] || emptyDiffStats();
+        const guessDist = [...cur.guessDist];
+        guessDist[rowIndex] = (guessDist[rowIndex] || 0) + 1;
+        return {
+          ...d,
+          [difficulty]: {
+            played: cur.played + 1,
+            won: cur.won + 1,
+            totalTimeMs: cur.totalTimeMs + elapsed,
+            guessDist
+          }
+        };
+      });
       saveRecord(difficulty, {
         name: playerName || "Anonymous",
         word: target,
@@ -484,6 +593,13 @@ export default function VaultCracker() {
         timeStr: formatTime(elapsed),
         guesses: rowIndex + 1,
         date: new Date().toLocaleString()
+      });
+    } else {
+      playLoseSound();
+      setStreak(0);
+      setDiffStats((d) => {
+        const cur = d[difficulty] || emptyDiffStats();
+        return { ...d, [difficulty]: { ...cur, played: cur.played + 1 } };
       });
     }
   }
@@ -571,6 +687,11 @@ export default function VaultCracker() {
     const list = await loadRecords(diff);
     setRecordsList(list);
     setRecordsLoading(false);
+  }
+
+  function openStats() {
+    setStatsTab(difficulty || "easy");
+    setShowStats(true);
   }
 
   // ---------- render helpers ----------
@@ -736,6 +857,19 @@ export default function VaultCracker() {
           font-size:.78rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px;
         }
         .pill.timer{ color:var(--brass-bright); font-weight:700; font-family:'Space Mono', monospace; }
+        .pill.streak{
+          color:#FF8C42; border-color:#FF8C42; font-weight:700;
+          display:inline-flex; align-items:center; gap:5px;
+        }
+
+        .stats-summary{ margin:0 0 18px; display:flex; flex-direction:column; gap:8px; align-items:center; }
+        .stats-row{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+        .stats-chip{
+          background:var(--bg-2); border:1px solid var(--edge); border-radius:20px;
+          padding:4px 10px; font-size:.72rem; color:var(--muted);
+          display:inline-flex; align-items:center; gap:4px;
+        }
+        .stats-chip.streak{ color:#FF8C42; border-color:#FF8C42; font-weight:700; }
         .pill.link{ cursor:pointer; color:var(--brass-bright); }
         .pill.link:hover{ border-color:var(--brass); }
 
@@ -897,6 +1031,25 @@ export default function VaultCracker() {
         .records-table td.time{ color:var(--emerald); font-weight:700; white-space:nowrap; }
         .records-empty{ color:var(--muted); font-size:.85rem; padding:24px 0; }
 
+        .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:4px 0 20px; }
+        .stat-box{
+          background:var(--bg-2); border:1px solid var(--edge); border-radius:10px;
+          padding:12px 10px; text-align:center;
+        }
+        .stat-box strong{ display:block; font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:1.6rem; }
+        .stat-box span{ font-size:.7rem; color:var(--muted); }
+
+        .dist-label{ font-size:.75rem; color:var(--muted); text-align:left; margin:0 0 8px; }
+        .dist-chart{ display:flex; flex-direction:column; gap:6px; }
+        .dist-row{ display:flex; align-items:center; gap:8px; }
+        .dist-num{ width:14px; font-size:.78rem; color:var(--muted); flex-shrink:0; }
+        .dist-bar-track{ flex:1; background:var(--bg-2); border-radius:5px; overflow:hidden; height:22px; }
+        .dist-bar-fill{
+          height:100%; display:flex; align-items:center; justify-content:flex-end;
+          padding-right:6px; border-radius:5px; transition:width .4s ease; min-width:0;
+        }
+        .dist-count{ font-size:.72rem; font-weight:700; color:#0d1117; }
+
         .confetti-cube{
           position:absolute; top:-30px; width:9px; height:9px; border-radius:2px;
           animation-name:drop; animation-timing-function:ease-in; animation-fill-mode:forwards; z-index:1;
@@ -950,6 +1103,28 @@ export default function VaultCracker() {
             <p className="greeting">Playing as <b>{escapeText(playerName)}</b></p>
             <h2>Pick a difficulty</h2>
             <p className="sub">A fresh word and clue is generated for you, every single game.</p>
+
+            {(bestStreak > 0 || Object.values(diffStats).some((s) => s.won > 0)) && (
+              <div className="stats-summary">
+                <div className="stats-row">
+                  <span className="stats-chip streak">
+                    <Flame size={13} />{streak} streak
+                  </span>
+                  <span className="stats-chip">Best: {bestStreak}</span>
+                </div>
+                <div className="stats-row totals-row">
+                  {Object.entries(DIFFICULTY_META).map(([key, m]) => (
+                    <span key={key} className="stats-chip" style={{ color: m.color }}>
+                      {diffStats[key]?.won || 0} {m.label}
+                    </span>
+                  ))}
+                </div>
+                <button className="tutorial-link" onClick={() => { playKeySound("letter"); openStats(); }}>
+                  <BarChart3 size={14} />Full stats
+                </button>
+              </div>
+            )}
+
             <div className="diff-grid">
               {Object.entries(DIFFICULTY_META).map(([key, m]) => {
                 const Icon = m.icon;
@@ -991,7 +1166,13 @@ export default function VaultCracker() {
 
             <div className="top-bar">
               <span className="pill">Attempt {Math.min(currentRow + 1, MAX_GUESSES)} of {MAX_GUESSES}</span>
+              {streak > 0 && (
+                <span className="pill streak" title={`Best streak: ${bestStreak}`}>
+                  <Flame size={14} />{streak}
+                </span>
+              )}
               <span className="pill link" onClick={() => { playKeySound("letter"); setShowTutorial(true); }} title="How to play"><HelpCircle size={14} /></span>
+              <span className="pill link" onClick={() => { playKeySound("letter"); openStats(); }} title="Your stats"><BarChart3 size={14} /></span>
               <span className="pill link" onClick={() => { playKeySound("letter"); openRecords(); }}><Trophy size={14} />Records</span>
               <span
                 className="pill link"
@@ -1117,6 +1298,84 @@ export default function VaultCracker() {
           </div>
         </div>
       )}
+
+      {showStats && (() => {
+        const cur = diffStats[statsTab] || emptyDiffStats();
+        const winPct = cur.played ? Math.round((cur.won / cur.played) * 100) : 0;
+        const totalGuessesUsed = cur.guessDist.reduce((sum, count, i) => sum + count * (i + 1), 0);
+        const avgGuesses = cur.won ? (totalGuessesUsed / cur.won).toFixed(1) : "–";
+        const avgTimeStr = cur.won ? formatTime(cur.totalTimeMs / cur.won) : "–:–";
+        const maxBar = Math.max(1, ...cur.guessDist);
+        const tabMeta = DIFFICULTY_META[statsTab];
+
+        return (
+          <div className="overlay">
+            <div className="vault-panel overlay-card">
+              <Rivets />
+              <button className="close-x" onClick={() => { playKeySound("back"); setShowStats(false); }}><X size={18} /></button>
+              <h2><BarChart3 size={20} />Your stats</h2>
+              <p className="sub" style={{ marginTop: -8 }}>Saved on this device only.</p>
+
+              <div className="records-tabs">
+                {Object.keys(DIFFICULTY_META).map((key) => (
+                  <button
+                    key={key}
+                    className={"records-tab" + (key === statsTab ? " active" : "")}
+                    onClick={() => { playKeySound("letter"); setStatsTab(key); }}
+                  >
+                    {DIFFICULTY_META[key].label}
+                  </button>
+                ))}
+              </div>
+
+              {cur.played === 0 ? (
+                <p className="records-empty">No {tabMeta.label.toLowerCase()} rounds played yet — go crack one!</p>
+              ) : (
+                <>
+                  <div className="stat-grid">
+                    <div className="stat-box">
+                      <strong style={{ color: tabMeta.color }}>{cur.played}</strong>
+                      <span>Played</span>
+                    </div>
+                    <div className="stat-box">
+                      <strong style={{ color: tabMeta.color }}>{winPct}%</strong>
+                      <span>Win rate</span>
+                    </div>
+                    <div className="stat-box">
+                      <strong style={{ color: tabMeta.color }}>{avgGuesses}</strong>
+                      <span>Avg guesses</span>
+                    </div>
+                    <div className="stat-box">
+                      <strong style={{ color: tabMeta.color }}>{avgTimeStr}</strong>
+                      <span>Avg time</span>
+                    </div>
+                  </div>
+
+                  <p className="dist-label">Guess distribution</p>
+                  <div className="dist-chart">
+                    {cur.guessDist.map((count, i) => (
+                      <div key={i} className="dist-row">
+                        <span className="dist-num">{i + 1}</span>
+                        <div className="dist-bar-track">
+                          <div
+                            className="dist-bar-fill"
+                            style={{
+                              width: `${Math.max(count > 0 ? 10 : 0, (count / maxBar) * 100)}%`,
+                              background: count > 0 ? tabMeta.color : "transparent"
+                            }}
+                          >
+                            {count > 0 && <span className="dist-count">{count}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {showTutorial && (
         <div className="overlay">
