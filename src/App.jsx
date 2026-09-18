@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { KeyRound, Trophy, Clock, Feather, Zap, Flame, X, Sparkles, Lock, Delete, CornerDownLeft, Volume2, VolumeX } from "lucide-react";
+import { KeyRound, Trophy, Clock, Feather, Zap, Flame, X, Sparkles, Lock, Delete, CornerDownLeft, Volume2, VolumeX, HelpCircle, ArrowRight, Skull } from "lucide-react";
 import * as Tone from "tone";
 
 // Outside Claude.ai, window.storage doesn't exist — fall back to plain
@@ -33,9 +33,10 @@ if (typeof window !== "undefined" && !window.storage) {
 const MAX_GUESSES = 5;
 
 const DIFFICULTY_META = {
-  easy:   { label: "Easy",   sub: "4-letter word",  rule: "exactly 4 letters, a simple everyday word a child would know", minLen: 4, maxLen: 4,  icon: Feather, color: "#3FA66B" },
-  medium: { label: "Medium", sub: "5–6 letters",     rule: "5 or 6 letters, a common word most adults would recognize",     minLen: 5, maxLen: 6,  icon: Zap,     color: "#4FA8C9" },
-  hard:   { label: "Hard",   sub: "7+ letters",      rule: "7 or more letters, a more advanced but still real, well-known word", minLen: 7, maxLen: 99, icon: Flame,   color: "#D9584F" }
+  easy:   { label: "Casual",   sub: "4-letter word",  rule: "exactly 4 letters, a simple everyday word a child would know", minLen: 4, maxLen: 4,  icon: Feather, color: "#3FA66B" },
+  medium: { label: "Moderate", sub: "5–6 letters",     rule: "5 or 6 letters, a common word most adults would recognize",     minLen: 5, maxLen: 6,  icon: Zap,     color: "#4FA8C9" },
+  hard:   { label: "Complex",  sub: "7+ letters",      rule: "7 or more letters, a more advanced but still real, well-known word", minLen: 7, maxLen: 99, icon: Flame,   color: "#D9584F" },
+  impossible: { label: "Unthinkable", sub: "16+ letters", rule: "more than 15 letters long (16 or more), a real word even if obscure or technical", minLen: 16, maxLen: 99, icon: Skull, color: "#A855F7" }
 };
 
 const FALLBACK_POOLS = {
@@ -137,6 +138,25 @@ const FALLBACK_POOLS = {
     { word: "VOLCANO", hint: "A mountain that can erupt with lava and ash." },
     { word: "WHISPER", hint: "To speak very softly and quietly." },
     { word: "UMBRELLA", hint: "A folding device you hold above you to stay dry in the rain." }
+  ],
+  impossible: [
+    { word: "MISUNDERSTANDING", hint: "A failure to correctly interpret what someone meant." },
+    { word: "RESPONSIBILITIES", hint: "Duties a person is expected to take care of." },
+    { word: "UNCHARACTERISTIC", hint: "Not typical of how someone usually behaves." },
+    { word: "INCOMPREHENSIBLE", hint: "Impossible to make sense of." },
+    { word: "DISPROPORTIONATE", hint: "Too large or too small compared to something else." },
+    { word: "ENVIRONMENTALIST", hint: "Someone who advocates for protecting the natural world." },
+    { word: "MULTIDIMENSIONAL", hint: "Having many different aspects, layers, or sides." },
+    { word: "UNPREDICTABILITY", hint: "The quality of being impossible to foresee." },
+    { word: "TRANSCONTINENTAL", hint: "Crossing or spanning an entire continent." },
+    { word: "CHARACTERISTICALLY", hint: "In a way that's typical of a particular person or thing." },
+    { word: "OVERGENERALIZATION", hint: "A broad conclusion drawn from far too little evidence." },
+    { word: "INTERCONNECTEDNESS", hint: "The state of being linked to everything else around it." },
+    { word: "DISPROPORTIONATELY", hint: "In a way that's out of proportion compared to something else." },
+    { word: "UNCONSTITUTIONALLY", hint: "In a manner that violates a country's founding legal document." },
+    { word: "INSTITUTIONALIZATION", hint: "The process of establishing something as a standard practice." },
+    { word: "INCOMPREHENSIBILITY", hint: "The state of being impossible to understand." },
+    { word: "ANTIDISESTABLISHMENTARIANISM", hint: "Historically, opposition to removing a church's official state status — often cited as one of the longest words in English." }
   ]
 };
 
@@ -231,8 +251,34 @@ function Dial({ label }) {
   );
 }
 
+function Splash({ logoSrc, onFinish, onTap }) {
+  const [leaving, setLeaving] = useState(false);
+
+  useEffect(() => {
+    const autoTimer = setTimeout(() => finish(), 2800);
+    return () => clearTimeout(autoTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function finish() {
+    if (onTap) onTap();
+    setLeaving(true);
+    setTimeout(onFinish, 350); // let the fade-out play before switching screens
+  }
+
+  return (
+    <div className={"splash" + (leaving ? " leaving" : "")} onClick={finish}>
+      <div className="splash-ring" />
+      <img src={logoSrc} alt="Vault Cracker" className="splash-logo" />
+      <h1 className="splash-title">Vault Cracker</h1>
+      <p className="splash-sub">Unlocking the vault…</p>
+      <p className="splash-skip">Tap anywhere to enter</p>
+    </div>
+  );
+}
+
 export default function VaultCracker() {
-  const [screen, setScreen] = useState("name");
+  const [screen, setScreen] = useState("splash");
   const [nameInput, setNameInput] = useState("");
   const [playerName, setPlayerName] = useState("");
 
@@ -257,6 +303,7 @@ export default function VaultCracker() {
 
   const [showResult, setShowResult] = useState(false);
   const [showRecords, setShowRecords] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [recordsTab, setRecordsTab] = useState("easy");
   const [recordsList, setRecordsList] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -343,12 +390,22 @@ export default function VaultCracker() {
   // ---------- name screen ----------
   function handleNameSubmit(e) {
     e.preventDefault();
+    playKeySound("enter");
     const val = nameInput.trim();
     if (!val) return;
     const clipped = val.slice(0, 24);
     setPlayerName(clipped);
     window.storage.set("last-player-name", clipped, false).catch(() => {});
     setScreen("difficulty");
+
+    window.storage.get("vc-tutorial-seen", false)
+      .then((res) => {
+        if (!res || !res.value) {
+          setShowTutorial(true);
+          window.storage.set("vc-tutorial-seen", "true", false).catch(() => {});
+        }
+      })
+      .catch(() => setShowTutorial(true)); // if storage is unavailable, err on the side of showing it
   }
 
   // ---------- puzzle loading ----------
@@ -379,7 +436,7 @@ export default function VaultCracker() {
       result = await fetchWithRetry(diff, 3, recentWords, theme);
     } catch (err) {
       result = pickFallback(diff);
-      setFeedback({ msg: "Gemini was unreachable, so we used an offline word instead.", type: "" });
+      setFeedback({ msg: "Couldn't fetch a fresh word right now, so we used an offline one instead.", type: "" });
     }
 
     const history = usedWordsHistory.current[diff] || [];
@@ -402,12 +459,6 @@ export default function VaultCracker() {
   function chooseDifficulty(diff) {
     setDifficulty(diff);
     setScreen("game");
-    loadNewWord(diff);
-  }
-
-  function switchDifficulty(diff) {
-    if (diff === difficulty) return;
-    setDifficulty(diff);
     loadNewWord(diff);
   }
 
@@ -627,25 +678,57 @@ export default function VaultCracker() {
         .greeting{ text-align:center; color:var(--muted); font-size:.8rem; margin:-6px 0 14px; }
         .greeting b{ color:var(--brass-bright); }
 
-        .diff-grid{ display:flex; gap:10px; flex-wrap:wrap; }
+        .diff-grid{ display:flex; flex-direction:column; gap:10px; }
         .diff-card{
-          flex:1; min-width:112px; background:var(--bg-2); border:1px solid var(--edge);
-          border-radius:12px; padding:16px 12px; text-align:center; cursor:pointer;
+          display:flex; align-items:center; gap:14px;
+          background:var(--bg-2); border:1px solid var(--edge);
+          border-radius:12px; padding:14px 16px; text-align:left; cursor:pointer;
           transition: border-color .15s ease, transform .12s ease;
         }
-        .diff-card:hover{ transform:translateY(-2px); }
+        .diff-card:hover{ transform:translateX(3px); }
+        .diff-card .diff-icon{
+          width:40px; height:40px; border-radius:10px; flex-shrink:0;
+          display:flex; align-items:center; justify-content:center;
+          background:rgba(255,255,255,.04);
+        }
+        .diff-card .diff-text{ display:flex; flex-direction:column; }
         .diff-card strong{
-          display:block; font-family:'Big Shoulders Display', sans-serif; font-weight:800;
-          font-size:1.15rem; margin:8px 0 2px; letter-spacing:.02em;
+          font-family:'Big Shoulders Display', sans-serif; font-weight:800;
+          font-size:1.15rem; letter-spacing:.02em; line-height:1.2;
         }
         .diff-card span{ font-size:.72rem; color:var(--muted); }
 
-        .diff-tabs{ display:flex; gap:6px; justify-content:center; margin-bottom:10px; flex-wrap:wrap; }
-        .diff-tab{
-          background:var(--steel); border:1px solid var(--edge); color:var(--muted);
-          padding:5px 12px; border-radius:20px; font-size:.72rem; cursor:pointer; font-family:'Space Mono', monospace;
+        .tutorial-link{
+          display:flex; align-items:center; justify-content:center; gap:6px;
+          background:transparent; border:none; color:var(--muted); font-size:.78rem;
+          margin:18px auto 0; cursor:pointer; font-family:'Space Mono', monospace;
         }
-        .diff-tab.active{ border-color:var(--brass); color:var(--brass-bright); }
+        .tutorial-link:hover{ color:var(--brass-bright); }
+
+        .tut-step{ text-align:left; font-size:.86rem; line-height:1.5; margin:0 0 10px; }
+        .tut-step b{ color:var(--brass-bright); }
+
+        .tut-example{ display:flex; gap:8px; justify-content:center; margin:12px 0 14px; }
+        .tut-tile{
+          width:44px; height:44px; border-radius:7px; display:flex; align-items:center;
+          justify-content:center; font-weight:700; font-size:1.2rem; font-family:'Space Mono', monospace;
+        }
+
+        .tut-legend{ list-style:none; padding:0; margin:0 0 16px; text-align:left; }
+        .tut-legend li{ display:flex; align-items:center; gap:8px; font-size:.82rem; margin-bottom:6px; color:var(--text); }
+        .tut-legend .dot{ width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+
+        .diff-status-row{ display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+        .diff-badge{
+          display:inline-flex; align-items:center; gap:6px; border:1px solid; border-radius:20px;
+          padding:5px 12px; font-size:.78rem; font-weight:700; background:var(--steel);
+        }
+        .status-link{
+          display:inline-flex; align-items:center; background:var(--steel); border:1px solid var(--edge);
+          color:var(--muted); font-size:.76rem; border-radius:20px; padding:5px 12px;
+          cursor:pointer; font-family:'Space Mono', monospace;
+        }
+        .status-link:hover{ border-color:var(--brass); color:var(--brass-bright); }
 
         .top-bar{ display:flex; flex-wrap:wrap; justify-content:center; align-items:center; margin:10px 0 14px; gap:8px; }
         .pill{
@@ -678,6 +761,60 @@ export default function VaultCracker() {
         }
         .dial-label{ color:var(--muted); font-size:.82rem; margin:0; }
         @keyframes dialspin{ to{ transform:rotate(360deg); } }
+
+        .splash{
+          position:fixed; inset:0; z-index:50; cursor:pointer;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          gap:16px; text-align:center; padding:24px;
+          background: radial-gradient(ellipse at 50% 40%, #1c2436 0%, var(--bg) 60%), var(--bg-2);
+          animation: splashIn .6s ease both;
+        }
+        .splash.leaving{ animation: splashOut .35s ease both; }
+        @keyframes splashIn{ from{ opacity:0; } to{ opacity:1; } }
+        @keyframes splashOut{ from{ opacity:1; } to{ opacity:0; } }
+
+        .splash-ring{
+          position:absolute; width:260px; height:260px; border-radius:50%;
+          border:2px solid var(--brass); opacity:.35;
+          animation: ringPulse 2.2s ease-out infinite;
+        }
+        @keyframes ringPulse{
+          0%{ transform:scale(.7); opacity:.5; }
+          100%{ transform:scale(1.15); opacity:0; }
+        }
+
+        .splash-logo{
+          width:148px; height:148px; border-radius:50%;
+          box-shadow: 0 0 0 3px var(--brass), 0 14px 40px rgba(0,0,0,.6);
+          animation: logoIn .8s cubic-bezier(.2,.9,.3,1.2) both;
+          position:relative; z-index:1;
+        }
+        @keyframes logoIn{
+          0%{ transform:scale(.4) rotate(-25deg); opacity:0; }
+          100%{ transform:scale(1) rotate(0deg); opacity:1; }
+        }
+
+        .splash-title{
+          font-family:'Big Shoulders Display', sans-serif; font-weight:800;
+          font-size:2.4rem; letter-spacing:.03em; color:var(--brass-bright); margin:6px 0 0;
+          animation: fadeUp .6s ease .3s both;
+        }
+        .splash-sub{
+          color:var(--muted); font-size:.9rem; margin:0;
+          animation: fadeUp .6s ease .5s both;
+        }
+        .splash-skip{
+          color:var(--muted); font-size:.72rem; margin:22px 0 0; opacity:.6;
+          animation: fadeUp .6s ease .9s both;
+        }
+        @keyframes fadeUp{
+          from{ opacity:0; transform:translateY(8px); }
+          to{ opacity:1; transform:translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce){
+          .splash, .splash-logo, .splash-title, .splash-sub, .splash-skip, .splash-ring{ animation-duration:.01s; }
+        }
 
         .grid-scene{ perspective:900px; display:flex; justify-content:center; margin-bottom:16px; }
         .grid{ display:flex; flex-direction:column; gap:7px; }
@@ -779,15 +916,14 @@ export default function VaultCracker() {
         }
       `}</style>
 
-<div className="stage">
-        <div className="brand" style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-            <KeyRound size={38} color="#E8B65C" />
-            <h1 style={{ margin: 0 }}>Vault Cracker</h1>
-          </div>
-          <p style={{ margin: '8px 0 0 0' }}>Guess the hidden word — 5 tries to crack it, new word every round</p>
+      {screen === "splash" ? (
+        <Splash logoSrc="/logo.jpg" onFinish={() => setScreen("name")} onTap={() => playKeySound("letter")} />
+      ) : (
+      <div className="stage">
+        <div className="brand">
+          <h1>Vault Cracker</h1>
+          <p>Guess the hidden word — 5 tries to crack it, new word every round</p>
         </div>
-        
 
         {screen === "name" && (
           <div className="vault-panel">
@@ -813,39 +949,50 @@ export default function VaultCracker() {
             <Rivets />
             <p className="greeting">Playing as <b>{escapeText(playerName)}</b></p>
             <h2>Pick a difficulty</h2>
-            <p className="sub">Gemini generates a fresh word and clue for you, every single game.</p>
+            <p className="sub">A fresh word and clue is generated for you, every single game.</p>
             <div className="diff-grid">
               {Object.entries(DIFFICULTY_META).map(([key, m]) => {
                 const Icon = m.icon;
                 return (
-                  <div key={key} className="diff-card" onClick={() => chooseDifficulty(key)}>
-                    <Icon size={22} color={m.color} />
-                    <strong style={{ color: m.color }}>{m.label}</strong>
-                    <span>{m.sub}</span>
+                  <div key={key} className="diff-card" onClick={() => { playKeySound("letter"); chooseDifficulty(key); }}>
+                    <span className="diff-icon" style={{ boxShadow: `inset 0 0 0 1px ${m.color}55` }}>
+                      <Icon size={20} color={m.color} />
+                    </span>
+                    <span className="diff-text">
+                      <strong style={{ color: m.color }}>{m.label}</strong>
+                      <span>{m.sub}</span>
+                    </span>
                   </div>
                 );
               })}
             </div>
+            <button className="tutorial-link" onClick={() => { playKeySound("letter"); setShowTutorial(true); }}>
+              <HelpCircle size={14} />How to play
+            </button>
           </div>
         )}
 
         {screen === "game" && (
           <div>
-            <div className="diff-tabs">
-              {Object.keys(DIFFICULTY_META).map((key) => (
-                <button
-                  key={key}
-                  className={"diff-tab" + (key === difficulty ? " active" : "")}
-                  onClick={() => switchDifficulty(key)}
-                >
-                  {DIFFICULTY_META[key].label}
-                </button>
-              ))}
+            <div className="diff-status-row">
+              {meta && (
+                <span className="diff-badge" style={{ color: meta.color, borderColor: meta.color }}>
+                  <meta.icon size={14} />{meta.label}
+                </span>
+              )}
+              <button className="status-link" onClick={() => { playKeySound("letter"); loadNewWord(difficulty); }}>New word</button>
+              <button
+                className="status-link"
+                onClick={() => { playKeySound("letter"); setScreen("difficulty"); stopTimer(); }}
+              >
+                Change difficulty
+              </button>
             </div>
 
             <div className="top-bar">
               <span className="pill">Attempt {Math.min(currentRow + 1, MAX_GUESSES)} of {MAX_GUESSES}</span>
-              <span className="pill link" onClick={openRecords}><Trophy size={14} />Records</span>
+              <span className="pill link" onClick={() => { playKeySound("letter"); setShowTutorial(true); }} title="How to play"><HelpCircle size={14} /></span>
+              <span className="pill link" onClick={() => { playKeySound("letter"); openRecords(); }}><Trophy size={14} />Records</span>
               <span
                 className="pill link"
                 onClick={() => setSoundOn((s) => !s)}
@@ -862,7 +1009,7 @@ export default function VaultCracker() {
             </div>
 
             {loading ? (
-              <Dial label="Asking Gemini for a fresh word…" />
+              <Dial label="Cracking a new combination…" />
             ) : (
               <div>
                 <div className="grid-scene">
@@ -905,12 +1052,13 @@ export default function VaultCracker() {
           </div>
         )}
       </div>
+      )}
 
       {showResult && (
         <div className="overlay">
           <div className="vault-panel overlay-card">
             <Rivets />
-            <button className="close-x" onClick={() => setShowResult(false)}><X size={18} /></button>
+            <button className="close-x" onClick={() => { playKeySound("back"); setShowResult(false); }}><X size={18} /></button>
             <h2>{won ? <><Sparkles size={22} />Cracked it!</> : "Vault sealed"}</h2>
             <p className="msg">{won ? `The word was ${target}.` : `Out of attempts — the word was ${target}.`}</p>
             <p className="stat">
@@ -919,8 +1067,8 @@ export default function VaultCracker() {
                 : <>Time on the clock: <b>{formatTime(elapsedMs)}</b>.</>}
             </p>
             <div className="overlay-actions">
-              <button className="btn-brass" onClick={() => loadNewWord(difficulty)}>New word</button>
-              <button className="btn-ghost" onClick={() => { setShowResult(false); setScreen("difficulty"); stopTimer(); }}>Change difficulty</button>
+              <button className="btn-brass" onClick={() => { playKeySound("enter"); loadNewWord(difficulty); }}>New word</button>
+              <button className="btn-ghost" onClick={() => { playKeySound("back"); setShowResult(false); setScreen("difficulty"); stopTimer(); }}>Change difficulty</button>
             </div>
             {won && <Confetti />}
           </div>
@@ -931,7 +1079,7 @@ export default function VaultCracker() {
         <div className="overlay">
           <div className="vault-panel overlay-card">
             <Rivets />
-            <button className="close-x" onClick={() => setShowRecords(false)}><X size={18} /></button>
+            <button className="close-x" onClick={() => { playKeySound("back"); setShowRecords(false); }}><X size={18} /></button>
             <h2><Trophy size={20} />Leaderboard</h2>
             <p className="sub" style={{ marginTop: -8 }}>Shared with everyone who plays this page.</p>
             <div className="records-tabs">
@@ -939,7 +1087,7 @@ export default function VaultCracker() {
                 <button
                   key={key}
                   className={"records-tab" + (key === recordsTab ? " active" : "")}
-                  onClick={() => switchRecordsTab(key)}
+                  onClick={() => { playKeySound("letter"); switchRecordsTab(key); }}
                 >
                   {DIFFICULTY_META[key].label}
                 </button>
@@ -966,6 +1114,41 @@ export default function VaultCracker() {
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {showTutorial && (
+        <div className="overlay">
+          <div className="vault-panel overlay-card">
+            <Rivets />
+            <button className="close-x" onClick={() => { playKeySound("back"); setShowTutorial(false); }}><X size={18} /></button>
+            <h2><HelpCircle size={20} />How to play</h2>
+
+            <p className="tut-step"><b>1. Read the clue.</b> A hint for the hidden word is always shown at the top of the screen.</p>
+
+            <p className="tut-step"><b>2. Type a guess.</b> Enter a word matching the tile count, then hit Enter or tap the on-screen keyboard's Enter key.</p>
+
+            <p className="tut-step"><b>3. Read the colors.</b> After each guess, every tile changes color:</p>
+
+            <div className="tut-example">
+              <div className="tut-tile" style={{ background: "#3FA66B", color: "#0d1117" }}>W</div>
+              <div className="tut-tile" style={{ background: "#4FA8C9", color: "#062028" }}>O</div>
+              <div className="tut-tile" style={{ background: "#3A4152" }}>R</div>
+              <div className="tut-tile" style={{ background: "#3A4152" }}>D</div>
+            </div>
+            <ul className="tut-legend">
+              <li><span className="dot" style={{ background: "#3FA66B" }} /> Green — right letter, right spot</li>
+              <li><span className="dot" style={{ background: "#4FA8C9" }} /> Cyan — right letter, wrong spot</li>
+              <li><span className="dot" style={{ background: "#3A4152" }} /> Grey — letter isn't in the word</li>
+            </ul>
+
+            <p className="tut-step"><b>4. You get 5 attempts.</b> Crack the word before you run out to win.</p>
+            <p className="tut-step"><b>5. Speed counts.</b> Your time is saved to the leaderboard for that difficulty when you win — try to beat your best.</p>
+
+            <div className="overlay-actions">
+              <button className="btn-brass" onClick={() => { playKeySound("enter"); setShowTutorial(false); }}>Got it<ArrowRight size={16} /></button>
+            </div>
           </div>
         </div>
       )}
