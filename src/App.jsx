@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { KeyRound, Trophy, Clock, Feather, Zap, Flame, X, Sparkles, Lock, Delete, CornerDownLeft, Volume2, VolumeX, HelpCircle, ArrowRight, Skull, BarChart3 } from "lucide-react";
+import { KeyRound, Trophy, Clock, Feather, Zap, Flame, X, Sparkles, Lock, Delete, CornerDownLeft, Volume2, VolumeX, HelpCircle, ArrowRight, Skull, BarChart3, Music } from "lucide-react";
 import * as Tone from "tone";
 
 // Outside Claude.ai, window.storage doesn't exist — fall back to plain
@@ -241,6 +241,44 @@ function Rivets() {
   return pos.map((p, i) => <span key={i} className="rivet" style={p} />);
 }
 
+function ValveWheel({ className }) {
+  const spokes = Array.from({ length: 8 }).map((_, i) => {
+    const angle = (i * 360) / 8;
+    return (
+      <line
+        key={i}
+        x1="100" y1="100" x2="100" y2="14"
+        stroke="#B8863E" strokeWidth="10" strokeLinecap="round"
+        transform={`rotate(${angle} 100 100)`}
+      />
+    );
+  });
+  return (
+    <svg className={className} viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="100" cy="100" r="92" fill="none" stroke="#B8863E" strokeWidth="10" />
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#B8863E" strokeWidth="4" opacity=".6" />
+      {spokes}
+      <circle cx="100" cy="100" r="24" fill="#B8863E" />
+      <circle cx="100" cy="100" r="10" fill="#0E1116" />
+    </svg>
+  );
+}
+
+function VaultBackdrop() {
+  return (
+    <div className="vault-backdrop" aria-hidden="true">
+      <div className="rivetline" />
+      <div className="arch" />
+      <span className="light red" />
+      <span className="light green" />
+      <span className="light red2" />
+      <span className="light green2" />
+      <ValveWheel className="wheel left" />
+      <ValveWheel className="wheel right" />
+    </div>
+  );
+}
+
 function Dial({ label }) {
   return (
     <div className="dial-wrap">
@@ -323,9 +361,21 @@ export default function VaultCracker() {
 
   // ---------- sound ----------
   const [soundOn, setSoundOn] = useState(true);
+  const [musicOn, setMusicOn] = useState(true);
+  const musicOnRef = useRef(true);
   const synthRef = useRef(null);
   const musicSynthRef = useRef(null);
+  const ambientSynthRef = useRef(null);
+  const ambientVolumeRef = useRef(null);
+  const ambientLoopRef = useRef(null);
   const audioReadyRef = useRef(false);
+
+  useEffect(() => {
+    musicOnRef.current = musicOn;
+    if (ambientVolumeRef.current) {
+      ambientVolumeRef.current.mute = !musicOn;
+    }
+  }, [musicOn]);
 
   const ensureAudio = useCallback(async () => {
     if (audioReadyRef.current) return;
@@ -347,6 +397,54 @@ export default function VaultCracker() {
       }).toDestination();
       musicSynth.volume.value = -12;
       musicSynthRef.current = musicSynth;
+
+      // Upbeat, plucky arcade-style background loop — a driving arpeggio over a pulsing bass.
+      Tone.Transport.bpm.value = 132;
+
+      const reverb = new Tone.Freeverb({ roomSize: 0.6, dampening: 4000 }).toDestination();
+      reverb.wet.value = 0.15;
+      const ambientVolume = new Tone.Volume(-16).connect(reverb);
+      ambientVolume.mute = !musicOnRef.current;
+
+      // Plucky 8-bit-style lead for the arpeggio.
+      const leadSynth = new Tone.Synth({
+        oscillator: { type: "square" },
+        envelope: { attack: 0.004, decay: 0.08, sustain: 0.1, release: 0.12 }
+      }).connect(ambientVolume);
+
+      // Punchy synth bass for the pulse underneath.
+      const bassSynth = new Tone.Synth({
+        oscillator: { type: "sawtooth" },
+        envelope: { attack: 0.005, decay: 0.1, sustain: 0.2, release: 0.15 }
+      }).connect(ambientVolume);
+      bassSynth.volume.value = -4;
+
+      ambientSynthRef.current = leadSynth;
+      ambientVolumeRef.current = ambientVolume;
+
+      // A driving minor progression — energetic, game-y, not tense/scary.
+      const progression = [
+        { bass: "A2", arp: ["A3", "C4", "E4", "C4"] },
+        { bass: "F2", arp: ["F3", "A3", "C4", "A3"] },
+        { bass: "C3", arp: ["C4", "E4", "G4", "E4"] },
+        { bass: "G2", arp: ["G3", "B3", "D4", "B3"] }
+      ];
+      let barIndex = 0;
+      let stepIndex = 0;
+
+      const arpLoop = new Tone.Loop((time) => {
+        const bar = progression[barIndex % progression.length];
+        if (stepIndex % 4 === 0) {
+          bassSynth.triggerAttackRelease(bar.bass, "8n", time);
+        }
+        const note = bar.arp[stepIndex % bar.arp.length];
+        leadSynth.triggerAttackRelease(note, "16n", time);
+        stepIndex++;
+        if (stepIndex % 4 === 0) barIndex++;
+      }, "8n");
+      arpLoop.start(0);
+      ambientLoopRef.current = arpLoop;
+      Tone.Transport.start();
 
       audioReadyRef.current = true;
     } catch (e) { /* audio unavailable, game still works silently */ }
@@ -740,26 +838,99 @@ export default function VaultCracker() {
           min-height:100vh; width:100%;
           background: radial-gradient(ellipse at 50% -10%, #1c2436 0%, var(--bg) 55%), var(--bg-2);
           color:var(--text); font-family:'Space Mono', monospace;
-          display:flex; justify-content:center; padding:28px 14px 60px; box-sizing:border-box;
+          display:flex; align-items:center; justify-content:center; padding:28px 14px; box-sizing:border-box;
+          position:relative; overflow-x:hidden; overflow-y:auto;
+        }
+        .music-toggle{
+          position:fixed; top:16px; right:16px; z-index:40;
+          width:38px; height:38px; border-radius:50%;
+          background:var(--steel); border:1px solid var(--brass);
+          color:var(--brass-bright); cursor:pointer;
+          display:flex; align-items:center; justify-content:center;
+          box-shadow:0 4px 12px rgba(0,0,0,.4);
+          transition: opacity .2s ease, transform .15s ease;
+        }
+        .music-toggle:hover{ transform:scale(1.06); }
+        .music-toggle.off{ color:var(--muted); border-color:var(--edge); opacity:.6; }
+
+        .vault-backdrop{
+          position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+        }
+        .vault-backdrop .arch{
+          position:absolute; top:-180px; left:50%; transform:translateX(-50%);
+          width:640px; height:640px; border-radius:50%;
+          border:14px solid rgba(184,134,62,.14);
+          box-shadow: 0 0 60px rgba(184,134,62,.06) inset, 0 0 40px rgba(0,0,0,.4);
+        }
+        .vault-backdrop .arch::before{
+          content:''; position:absolute; inset:34px; border-radius:50%;
+          border:2px dashed rgba(184,134,62,.10);
+        }
+        .vault-backdrop .light{
+          position:absolute; top:26px; width:11px; height:11px; border-radius:50%;
+        }
+        .vault-backdrop .light.red{ left:34px; background:#D9584F; box-shadow:0 0 10px 2px rgba(217,88,79,.7); }
+        .vault-backdrop .light.green{ left:54px; background:#3FA66B; box-shadow:0 0 10px 2px rgba(63,166,107,.7); }
+        .vault-backdrop .light.red2{ right:34px; background:#D9584F; box-shadow:0 0 10px 2px rgba(217,88,79,.7); }
+        .vault-backdrop .light.green2{ right:54px; background:#3FA66B; box-shadow:0 0 10px 2px rgba(63,166,107,.7); }
+        .vault-backdrop .wheel{
+          position:absolute; top:50%; width:340px; height:340px; margin-top:-170px;
+          opacity:.16;
+        }
+        .vault-backdrop .wheel.left{ left:-160px; }
+        .vault-backdrop .wheel.right{ right:-160px; transform:scaleX(-1); }
+        .vault-backdrop .rivetline{
+          position:absolute; inset:0;
+          background-image: radial-gradient(rgba(184,134,62,.10) 1.5px, transparent 1.5px);
+          background-size: 46px 46px;
+          mask-image: radial-gradient(ellipse at 50% 20%, black 0%, transparent 65%);
         }
         .vc-root *{ box-sizing:border-box; }
-        .stage{ width:100%; max-width:440px; }
+        .stage{ width:100%; max-width:520px; position:relative; z-index:1; }
 
-        .brand{ text-align:center; margin-bottom:18px; }
+        .brand{ text-align:center; margin-bottom:22px; }
         .brand h1{
           font-family:'Big Shoulders Display', sans-serif; font-weight:800;
-          font-size:2.6rem; letter-spacing:.02em; margin:0; color:var(--brass-bright);
+          font-size:3rem; letter-spacing:.02em; margin:0; color:var(--brass-bright);
           text-shadow:0 2px 0 rgba(0,0,0,.5);
         }
-        .brand p{ color:var(--muted); font-size:.85rem; margin:6px 0 0; }
+        .brand p{ color:var(--muted); font-size:.92rem; margin:8px 0 0; }
+
+        .brand-compact{ margin-bottom:10px; }
+        .brand-compact h1{ font-size:2rem; }
+        .brand-compact p{ font-size:.76rem; margin-top:3px; }
+
+        .compact-panel{ padding:20px 26px; }
+        .compact-panel h2{ font-size:1.4rem; margin-bottom:3px; }
+        .compact-panel .sub{ font-size:.78rem; margin-bottom:12px; }
+        .compact-panel .greeting{ margin-bottom:6px; }
 
         .vault-panel{
           position:relative;
           background:linear-gradient(150deg, var(--steel), var(--steel-2));
           border:1px solid var(--edge);
-          border-radius:16px;
-          padding:28px 24px;
+          border-radius:18px;
+          padding:40px 36px;
           box-shadow: inset 1px 1px 2px rgba(255,255,255,.05), inset -2px -2px 6px rgba(0,0,0,.55), 0 14px 32px rgba(0,0,0,.45);
+        }
+        .name-enter{
+          transform-origin:left center;
+          animation: vaultDoorIn .7s cubic-bezier(.16,.84,.44,1) both;
+        }
+        @keyframes vaultDoorIn{
+          0%{
+            opacity:0;
+            transform: perspective(1000px) rotateY(-58deg) translateX(-16px);
+          }
+          65%{ opacity:1; }
+          85%{
+            box-shadow: inset 1px 1px 2px rgba(255,255,255,.05), inset -2px -2px 6px rgba(0,0,0,.55), 0 14px 32px rgba(0,0,0,.45), 0 0 30px 4px rgba(184,134,62,.35);
+          }
+          100%{
+            opacity:1;
+            transform: perspective(1000px) rotateY(0deg) translateX(0);
+            box-shadow: inset 1px 1px 2px rgba(255,255,255,.05), inset -2px -2px 6px rgba(0,0,0,.55), 0 14px 32px rgba(0,0,0,.45);
+          }
         }
         .rivet{
           position:absolute; width:9px; height:9px; border-radius:50%;
@@ -768,17 +939,19 @@ export default function VaultCracker() {
         }
 
         .vault-panel h2{
-          font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:1.5rem;
-          letter-spacing:.02em; margin:0 0 6px; color:var(--text); text-align:center;
+          font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:1.9rem;
+          letter-spacing:.02em; margin:0 0 8px; color:var(--text); text-align:center;
         }
-        .vault-panel .sub{ color:var(--muted); font-size:.85rem; text-align:center; margin:0 0 22px; }
+        .vault-panel .sub{ color:var(--muted); font-size:.92rem; text-align:center; margin:0 0 28px; }
 
-        .name-form{ display:flex; gap:8px; }
+        .name-form{ display:flex; flex-direction:column; gap:14px; }
         .name-form input{
-          flex:1; background:var(--bg-2); border:1px solid var(--edge); color:var(--text);
-          padding:12px 14px; border-radius:8px; font-family:'Space Mono', monospace; font-size:.95rem;
+          background:var(--bg-2); border:1px solid var(--edge); color:var(--text);
+          padding:16px 18px; border-radius:10px; font-family:'Space Mono', monospace; font-size:1.1rem;
+          text-align:center;
         }
         .name-form input:focus{ outline:2px solid var(--brass); outline-offset:1px; }
+        .name-form .btn-brass{ width:100%; height:52px; font-size:1.05rem; justify-content:center; }
 
         .btn-brass{
           background:linear-gradient(160deg, var(--brass-bright), var(--brass));
@@ -799,30 +972,30 @@ export default function VaultCracker() {
         .greeting{ text-align:center; color:var(--muted); font-size:.8rem; margin:-6px 0 14px; }
         .greeting b{ color:var(--brass-bright); }
 
-        .diff-grid{ display:flex; flex-direction:column; gap:10px; }
+        .diff-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
         .diff-card{
-          display:flex; align-items:center; gap:14px;
+          display:flex; flex-direction:column; align-items:center; gap:6px;
           background:var(--bg-2); border:1px solid var(--edge);
-          border-radius:12px; padding:14px 16px; text-align:left; cursor:pointer;
+          border-radius:10px; padding:12px 14px; text-align:center; cursor:pointer;
           transition: border-color .15s ease, transform .12s ease;
         }
-        .diff-card:hover{ transform:translateX(3px); }
+        .diff-card:hover{ transform:translateY(-2px); }
         .diff-card .diff-icon{
-          width:40px; height:40px; border-radius:10px; flex-shrink:0;
+          width:32px; height:32px; border-radius:8px; flex-shrink:0;
           display:flex; align-items:center; justify-content:center;
           background:rgba(255,255,255,.04);
         }
-        .diff-card .diff-text{ display:flex; flex-direction:column; }
+        .diff-card .diff-text{ display:flex; flex-direction:column; align-items:center; }
         .diff-card strong{
           font-family:'Big Shoulders Display', sans-serif; font-weight:800;
-          font-size:1.15rem; letter-spacing:.02em; line-height:1.2;
+          font-size:1.02rem; letter-spacing:.02em; line-height:1.15;
         }
-        .diff-card span{ font-size:.72rem; color:var(--muted); }
+        .diff-card span{ font-size:.68rem; color:var(--muted); }
 
         .tutorial-link{
           display:flex; align-items:center; justify-content:center; gap:6px;
-          background:transparent; border:none; color:var(--muted); font-size:.78rem;
-          margin:18px auto 0; cursor:pointer; font-family:'Space Mono', monospace;
+          background:transparent; border:none; color:var(--muted); font-size:.74rem;
+          margin:10px auto 0; cursor:pointer; font-family:'Space Mono', monospace;
         }
         .tutorial-link:hover{ color:var(--brass-bright); }
 
@@ -862,11 +1035,11 @@ export default function VaultCracker() {
           display:inline-flex; align-items:center; gap:5px;
         }
 
-        .stats-summary{ margin:0 0 18px; display:flex; flex-direction:column; gap:8px; align-items:center; }
-        .stats-row{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+        .stats-summary{ margin:0 0 10px; display:flex; flex-direction:column; gap:5px; align-items:center; }
+        .stats-row{ display:flex; gap:5px; flex-wrap:wrap; justify-content:center; }
         .stats-chip{
           background:var(--bg-2); border:1px solid var(--edge); border-radius:20px;
-          padding:4px 10px; font-size:.72rem; color:var(--muted);
+          padding:3px 9px; font-size:.68rem; color:var(--muted);
           display:inline-flex; align-items:center; gap:4px;
         }
         .stats-chip.streak{ color:#FF8C42; border-color:#FF8C42; font-weight:700; }
@@ -947,7 +1120,7 @@ export default function VaultCracker() {
         }
 
         @media (prefers-reduced-motion: reduce){
-          .splash, .splash-logo, .splash-title, .splash-sub, .splash-skip, .splash-ring{ animation-duration:.01s; }
+          .splash, .splash-logo, .splash-title, .splash-sub, .splash-skip, .splash-ring, .name-enter{ animation-duration:.01s; }
         }
 
         .grid-scene{ perspective:900px; display:flex; justify-content:center; margin-bottom:16px; }
@@ -1069,17 +1242,27 @@ export default function VaultCracker() {
         }
       `}</style>
 
+      <VaultBackdrop />
+
+      <button
+        className={"music-toggle" + (musicOn ? "" : " off")}
+        onClick={() => { ensureAudio(); setMusicOn((m) => !m); }}
+        title={musicOn ? "Mute background music" : "Unmute background music"}
+      >
+        <Music size={16} />
+      </button>
+
       {screen === "splash" ? (
         <Splash logoSrc="/logo.jpg" onFinish={() => setScreen("name")} onTap={() => playKeySound("letter")} />
       ) : (
       <div className="stage">
-        <div className="brand">
+        <div className={"brand" + (screen === "difficulty" ? " brand-compact" : "")}>
           <h1>Vault Cracker</h1>
           <p>Guess the hidden word — 5 tries to crack it, new word every round</p>
         </div>
 
         {screen === "name" && (
-          <div className="vault-panel">
+          <div className="vault-panel name-enter">
             <Rivets />
             <h2>Who's cracking the vault?</h2>
             <p className="sub">Enter your name — it'll be saved on the leaderboard with your time.</p>
@@ -1098,7 +1281,7 @@ export default function VaultCracker() {
         )}
 
         {screen === "difficulty" && (
-          <div className="vault-panel">
+          <div className="vault-panel compact-panel">
             <Rivets />
             <p className="greeting">Playing as <b>{escapeText(playerName)}</b></p>
             <h2>Pick a difficulty</h2>
