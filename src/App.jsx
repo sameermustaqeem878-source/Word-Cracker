@@ -264,17 +264,46 @@ function ValveWheel({ className }) {
   );
 }
 
+function FloatingDust() {
+  const particles = Array.from({ length: 16 }).map((_, i) => {
+    const left = Math.random() * 100;
+    const size = 2 + Math.random() * 3;
+    const duration = 14 + Math.random() * 12;
+    const delay = Math.random() * -20;
+    const drift = (Math.random() - 0.5) * 60;
+    return (
+      <span
+        key={i}
+        className="dust"
+        style={{
+          left: left + "%",
+          width: size + "px",
+          height: size + "px",
+          animationDuration: duration + "s",
+          animationDelay: delay + "s",
+          "--drift": drift + "px"
+        }}
+      />
+    );
+  });
+  return <div className="dust-field">{particles}</div>;
+}
+
 function VaultBackdrop() {
   return (
     <div className="vault-backdrop" aria-hidden="true">
       <div className="rivetline" />
       <div className="arch" />
+      <div className="arch arch-outer" />
+      <div className="pipe pipe-top" />
+      <div className="pipe pipe-bottom" />
       <span className="light red" />
       <span className="light green" />
       <span className="light red2" />
       <span className="light green2" />
       <ValveWheel className="wheel left" />
       <ValveWheel className="wheel right" />
+      <FloatingDust />
     </div>
   );
 }
@@ -859,13 +888,25 @@ export default function VaultCracker() {
         .vault-backdrop .arch{
           position:absolute; top:-180px; left:50%; transform:translateX(-50%);
           width:640px; height:640px; border-radius:50%;
-          border:14px solid rgba(184,134,62,.14);
-          box-shadow: 0 0 60px rgba(184,134,62,.06) inset, 0 0 40px rgba(0,0,0,.4);
+          border:14px solid rgba(184,134,62,.20);
+          box-shadow: 0 0 60px rgba(184,134,62,.09) inset, 0 0 40px rgba(0,0,0,.4);
         }
         .vault-backdrop .arch::before{
           content:''; position:absolute; inset:34px; border-radius:50%;
-          border:2px dashed rgba(184,134,62,.10);
+          border:2px dashed rgba(184,134,62,.16);
         }
+        .vault-backdrop .arch-outer{
+          width:840px; height:840px; top:-280px;
+          border-width:2px; border-color:rgba(184,134,62,.10);
+          box-shadow:none;
+        }
+        .vault-backdrop .arch-outer::before{ display:none; }
+        .vault-backdrop .pipe{
+          position:absolute; left:0; right:0; height:5px;
+          background:linear-gradient(90deg, transparent, rgba(184,134,62,.18) 15%, rgba(184,134,62,.18) 85%, transparent);
+        }
+        .vault-backdrop .pipe-top{ top:64px; }
+        .vault-backdrop .pipe-bottom{ bottom:64px; }
         .vault-backdrop .light{
           position:absolute; top:26px; width:11px; height:11px; border-radius:50%;
         }
@@ -874,16 +915,30 @@ export default function VaultCracker() {
         .vault-backdrop .light.red2{ right:34px; background:#D9584F; box-shadow:0 0 10px 2px rgba(217,88,79,.7); }
         .vault-backdrop .light.green2{ right:54px; background:#3FA66B; box-shadow:0 0 10px 2px rgba(63,166,107,.7); }
         .vault-backdrop .wheel{
-          position:absolute; top:50%; width:340px; height:340px; margin-top:-170px;
-          opacity:.16;
+          position:absolute; top:50%; width:420px; height:420px; margin-top:-210px;
+          opacity:.30;
         }
-        .vault-backdrop .wheel.left{ left:-160px; }
-        .vault-backdrop .wheel.right{ right:-160px; transform:scaleX(-1); }
+        .vault-backdrop .wheel.left{ left:-190px; }
+        .vault-backdrop .wheel.right{ right:-190px; transform:scaleX(-1); }
         .vault-backdrop .rivetline{
           position:absolute; inset:0;
-          background-image: radial-gradient(rgba(184,134,62,.10) 1.5px, transparent 1.5px);
-          background-size: 46px 46px;
-          mask-image: radial-gradient(ellipse at 50% 20%, black 0%, transparent 65%);
+          background-image: radial-gradient(rgba(184,134,62,.14) 1.5px, transparent 1.5px);
+          background-size: 42px 42px;
+          mask-image: radial-gradient(ellipse at 50% 30%, black 0%, transparent 75%);
+        }
+        .dust-field{ position:absolute; inset:0; }
+        .dust{
+          position:absolute;
+          bottom:-10px;
+          border-radius:50%;
+          background:radial-gradient(circle, rgba(232,182,94,.9), rgba(232,182,94,0) 70%);
+          animation: driftUp linear infinite;
+        }
+        @keyframes driftUp{
+          0%{ transform:translate(0,0); opacity:0; }
+          10%{ opacity:.55; }
+          90%{ opacity:.3; }
+          100%{ transform:translate(var(--drift), -105vh); opacity:0; }
         }
         .vc-root *{ box-sizing:border-box; }
         .stage{ width:100%; max-width:520px; position:relative; z-index:1; }
@@ -913,25 +968,32 @@ export default function VaultCracker() {
           padding:40px 36px;
           box-shadow: inset 1px 1px 2px rgba(255,255,255,.05), inset -2px -2px 6px rgba(0,0,0,.55), 0 14px 32px rgba(0,0,0,.45);
         }
-        .name-enter{
-          transform-origin:left center;
-          animation: vaultDoorIn .7s cubic-bezier(.16,.84,.44,1) both;
+        .name-hang-wrap{
+          position:relative;
+          transform-origin: top center;
+          animation: chainDrop 1s cubic-bezier(.34,1.1,.4,1) both;
         }
-        @keyframes vaultDoorIn{
-          0%{
-            opacity:0;
-            transform: perspective(1000px) rotateY(-58deg) translateX(-16px);
-          }
-          65%{ opacity:1; }
-          85%{
-            box-shadow: inset 1px 1px 2px rgba(255,255,255,.05), inset -2px -2px 6px rgba(0,0,0,.55), 0 14px 32px rgba(0,0,0,.45), 0 0 30px 4px rgba(184,134,62,.35);
-          }
-          100%{
-            opacity:1;
-            transform: perspective(1000px) rotateY(0deg) translateX(0);
-            box-shadow: inset 1px 1px 2px rgba(255,255,255,.05), inset -2px -2px 6px rgba(0,0,0,.55), 0 14px 32px rgba(0,0,0,.45);
-          }
+        @keyframes chainDrop{
+          0%{ opacity:0; transform: translateY(-160px) rotate(0deg); }
+          35%{ opacity:1; transform: translateY(0) rotate(7deg); }
+          50%{ transform: translateY(0) rotate(-5deg); }
+          65%{ transform: rotate(3deg); }
+          78%{ transform: rotate(-2deg); }
+          88%{ transform: rotate(1deg); }
+          100%{ opacity:1; transform: translateY(0) rotate(0deg); }
         }
+        .hang-chain{
+          display:flex; flex-direction:column; align-items:center; gap:1px;
+          position:absolute; top:-42px; z-index:2;
+        }
+        .hang-chain.left{ left:48px; }
+        .hang-chain.right{ right:48px; }
+        .hang-chain .link{
+          width:11px; height:16px; border:3px solid var(--brass);
+          border-radius:50%; background:transparent;
+          box-shadow:0 1px 2px rgba(0,0,0,.5);
+        }
+        .hang-chain .link.alt{ transform:rotate(90deg); width:16px; height:11px; }
         .rivet{
           position:absolute; width:9px; height:9px; border-radius:50%;
           background: radial-gradient(circle at 35% 30%, #F2CB80, #7f591c 75%);
@@ -972,7 +1034,20 @@ export default function VaultCracker() {
         .greeting{ text-align:center; color:var(--muted); font-size:.8rem; margin:-6px 0 14px; }
         .greeting b{ color:var(--brass-bright); }
 
+        .diff-enter{
+          animation: fadeSlideUp .5s cubic-bezier(.2,.8,.3,1) both;
+        }
+        @keyframes fadeSlideUp{
+          0%{ opacity:0; transform: translateY(18px) scale(.98); }
+          100%{ opacity:1; transform: translateY(0) scale(1); }
+        }
+
         .diff-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .card-pop{ animation: cardPop .45s cubic-bezier(.2,.8,.3,1) both; }
+        @keyframes cardPop{
+          0%{ opacity:0; transform: translateY(14px) scale(.94); }
+          100%{ opacity:1; transform: translateY(0) scale(1); }
+        }
         .diff-card{
           display:flex; flex-direction:column; align-items:center; gap:6px;
           background:var(--bg-2); border:1px solid var(--edge);
@@ -1120,7 +1195,8 @@ export default function VaultCracker() {
         }
 
         @media (prefers-reduced-motion: reduce){
-          .splash, .splash-logo, .splash-title, .splash-sub, .splash-skip, .splash-ring, .name-enter{ animation-duration:.01s; }
+          .splash, .splash-logo, .splash-title, .splash-sub, .splash-skip, .splash-ring, .name-hang-wrap, .diff-enter, .card-pop{ animation-duration:.01s; }
+          .dust-field{ display:none; }
         }
 
         .grid-scene{ perspective:900px; display:flex; justify-content:center; margin-bottom:16px; }
@@ -1262,26 +1338,34 @@ export default function VaultCracker() {
         </div>
 
         {screen === "name" && (
-          <div className="vault-panel name-enter">
-            <Rivets />
-            <h2>Who's cracking the vault?</h2>
-            <p className="sub">Enter your name — it'll be saved on the leaderboard with your time.</p>
-            <form className="name-form" onSubmit={handleNameSubmit}>
-              <input
-                type="text"
-                maxLength={24}
-                autoComplete="off"
-                placeholder="Your name"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-              />
-              <button type="submit" className="btn-brass"><KeyRound size={16} />Continue</button>
-            </form>
+          <div className="name-hang-wrap">
+            <div className="hang-chain left">
+              <span className="link" /><span className="link alt" /><span className="link" /><span className="link alt" />
+            </div>
+            <div className="hang-chain right">
+              <span className="link" /><span className="link alt" /><span className="link" /><span className="link alt" />
+            </div>
+            <div className="vault-panel">
+              <Rivets />
+              <h2>Who's cracking the vault?</h2>
+              <p className="sub">Enter your name — it'll be saved on the leaderboard with your time.</p>
+              <form className="name-form" onSubmit={handleNameSubmit}>
+                <input
+                  type="text"
+                  maxLength={24}
+                  autoComplete="off"
+                  placeholder="Your name"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                />
+                <button type="submit" className="btn-brass"><KeyRound size={16} />Continue</button>
+              </form>
+            </div>
           </div>
         )}
 
         {screen === "difficulty" && (
-          <div className="vault-panel compact-panel">
+          <div className="vault-panel compact-panel diff-enter">
             <Rivets />
             <p className="greeting">Playing as <b>{escapeText(playerName)}</b></p>
             <h2>Pick a difficulty</h2>
@@ -1309,10 +1393,15 @@ export default function VaultCracker() {
             )}
 
             <div className="diff-grid">
-              {Object.entries(DIFFICULTY_META).map(([key, m]) => {
+              {Object.entries(DIFFICULTY_META).map(([key, m], idx) => {
                 const Icon = m.icon;
                 return (
-                  <div key={key} className="diff-card" onClick={() => { playKeySound("letter"); chooseDifficulty(key); }}>
+                  <div
+                    key={key}
+                    className="diff-card card-pop"
+                    style={{ animationDelay: (idx * 0.07) + "s" }}
+                    onClick={() => { playKeySound("letter"); chooseDifficulty(key); }}
+                  >
                     <span className="diff-icon" style={{ boxShadow: `inset 0 0 0 1px ${m.color}55` }}>
                       <Icon size={20} color={m.color} />
                     </span>
